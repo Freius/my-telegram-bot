@@ -69,9 +69,9 @@ def generate_report(vacancies: list, bank_name: str, city: str) -> str:
             if vacancy.get('salary') and vacancy['salary'].get('from'):
                 salary_diff = vacancy['salary']['from'] - SBER_BENCHMARK['salary_avg']
                 if salary_diff > 0:
-                    salary_comparison = f"(🔺 +{salary_diff} руб. к Сберу)"
+                    salary_comparison = f"(🔺 )"
                 elif salary_diff < 0:
-                    salary_comparison = f"(🔻 {salary_diff} руб. к Сберу)"
+                    salary_comparison = f"(🔻 )"
                 else:
                     salary_comparison = "(≈ как в Сбере)"
             
