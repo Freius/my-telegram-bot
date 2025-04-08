@@ -1,4 +1,4 @@
-API_TOKEN = "7904255576:AAEgiYx9y4E_oSItc0iaKUy-mzF5ibZy2SU"
+API_TOKEN = "7760991591:AAHb3Gk3A4kECQj7_S8S_Q7YfUQcupZDkZ8"
 
 CITIES = {
     "msk": {"id": 1, "name": "Москва"},
