@@ -57,8 +57,7 @@ def generate_report(vacancies: list, bank_name: str, city: str) -> str:
         return (f"😕 В {city} не найдено вакансий для {bank_name}\n"
                 "Попробуйте изменить параметры поиска или выбрать другой город")
     
-    report = [f"📊 Отчет по вакансиям {bank_name} ({city}):\n"
-              f"🔍 Сравнение с условиями в Сбере (средняя зарплата: {SBER_BENCHMARK['salary_avg']} руб.)\n"]
+    report = [f"📊 Отчет по вакансиям {bank_name} ({city}):\n"]
     
     for i, vacancy in enumerate(vacancies[:5], 1):  # Показываем до 5 вакансий
         try:
@@ -70,11 +69,11 @@ def generate_report(vacancies: list, bank_name: str, city: str) -> str:
             if vacancy.get('salary') and vacancy['salary'].get('from'):
                 salary_diff = vacancy['salary']['from'] - SBER_BENCHMARK['salary_avg']
                 if salary_diff > 0:
-                    salary_comparison = f"(🔺 +{salary_diff} руб. к среднему в Сбере)"
+                    salary_comparison = f"(🔺 +{salary_diff} руб. к Сберу)"
                 elif salary_diff < 0:
-                    salary_comparison = f"(🔻 {salary_diff} руб. к среднему в Сбере)"
+                    salary_comparison = f"(🔻 {salary_diff} руб. к Сберу)"
                 else:
-                    salary_comparison = "(≈ среднему в Сбере)"
+                    salary_comparison = "(≈ как в Сбере)"
             
             report.append(
                 f"\n{i}. 🏦 {analyzed.get('Название банка', vacancy.get('employer', {}).get('name', 'Не указано'))}\n"
@@ -183,6 +182,9 @@ async def handle_bank_button(message: types.Message):
         logger.info(f"Запрос анализа для {bank_name} в городе {city} (ID: {city_id})")
         await message.answer(f"🔍 Ищу вакансии {bank_name} в {city}...")
         
+        # Удаляем вебхук перед запуском long-polling
+        await bot.delete_webhook(drop_pending_updates=True)
+        
         # Первый запрос - точное совпадение с названием банка
         vacancies = get_hh_vacancies(bank_name, city_id)
         
@@ -191,7 +193,7 @@ async def handle_bank_button(message: types.Message):
             vacancies = get_hh_vacancies(bank_name.split()[0], city_id)
         
         # Если все равно не найдено, ищем вакансии банков вообще
-        if not vacancies and bank_name != "Тинькофф":  # Для Тинькофф не ищем "банк"
+        if not vacancies and bank_name != "Тинькофф":
             vacancies = get_hh_vacancies(f"{bank_name.split()[0]} банк", city_id)
         
         report = generate_report(vacancies, bank_name, city)
@@ -211,6 +213,8 @@ async def handle_bank_button(message: types.Message):
 async def main():
     """Запуск бота"""
     logger.info("Starting bot...")
+    # Убедимся, что вебхук удален перед запуском polling
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
