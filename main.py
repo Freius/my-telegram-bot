@@ -57,17 +57,31 @@ def generate_report(vacancies: list, bank_name: str, city: str) -> str:
         return (f"😕 В {city} не найдено вакансий для {bank_name}\n"
                 "Попробуйте изменить параметры поиска или выбрать другой город")
     
-    report = [f"📊 Отчет по вакансиям {bank_name} ({city}):\n"]
+    report = [f"📊 Отчет по вакансиям {bank_name} ({city}):\n"
+              f"🔍 Сравнение с условиями в Сбере (средняя зарплата: {SBER_BENCHMARK['salary_avg']} руб.)\n"]
     
     for i, vacancy in enumerate(vacancies[:5], 1):  # Показываем до 5 вакансий
         try:
             analyzed = analyze_vacancy(vacancy, SBER_BENCHMARK)
+            salary = format_salary(vacancy.get('salary'))
+            salary_comparison = ""
+            
+            # Сравнение зарплаты
+            if vacancy.get('salary') and vacancy['salary'].get('from'):
+                salary_diff = vacancy['salary']['from'] - SBER_BENCHMARK['salary_avg']
+                if salary_diff > 0:
+                    salary_comparison = f"(🔺 +{salary_diff} руб. к среднему в Сбере)"
+                elif salary_diff < 0:
+                    salary_comparison = f"(🔻 {salary_diff} руб. к среднему в Сбере)"
+                else:
+                    salary_comparison = "(≈ среднему в Сбере)"
+            
             report.append(
                 f"\n{i}. 🏦 {analyzed.get('Название банка', vacancy.get('employer', {}).get('name', 'Не указано'))}\n"
                 f"   📌 Должность: {vacancy.get('name', 'Не указана')}\n"
-                f"   💰 Зарплата: {format_salary(vacancy.get('salary'))}\n"
+                f"   💰 Зарплата: {salary} {salary_comparison}\n"
                 f"   ✔️ Преимущества: {analyzed.get('Преимущества', 'Нет')}\n"
-                f"   🎁 Соцпакет: {analyzed.get('Соцпакет', 'Нет')}\n"
+                f"   🎁 Соцпакет: {analyzed.get('Соцпакет', 'см. в условиях')}\n"
                 f"   🔗 Ссылка: {vacancy.get('alternate_url', 'нет')}"
             )
         except Exception as e:
