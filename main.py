@@ -58,7 +58,8 @@ def generate_report(vacancies: list, bank_name: str, city: str) -> str:
                 "Попробуйте изменить параметры поиска или выбрать другой город")
     
     report = [f"📊 Отчет по вакансиям {bank_name} ({city}):\n"
-             
+              f"🔍 Сравнение с условиями в Сбере (средняя зарплата: {SBER_BENCHMARK['salary_avg']} руб.)\n"]
+    
     for i, vacancy in enumerate(vacancies[:5], 1):  # Показываем до 5 вакансий
         try:
             analyzed = analyze_vacancy(vacancy, SBER_BENCHMARK)
