@@ -1,3 +1,5 @@
+await bot.delete_webhook(drop_pending_updates=True)  # Отключаем возможные старые вебхуки
+await dp.start_polling(bot)
 import json
 import asyncio
 import logging
