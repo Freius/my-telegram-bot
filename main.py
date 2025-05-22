@@ -159,7 +159,7 @@ async def cmd_start(message: types.Message):
 @dp.callback_query(F.data == "start")
 async def restart(query: CallbackQuery):
     user_data[query.from_user.id] = {}
-    await query.message.edit_text("Выберите город:", reply_markup=city_keyboard())
+    await query.message.edit_text("Для анализа вакансий выберите город:", reply_markup=city_keyboard())
 
 @dp.callback_query(F.data.startswith("city:"))
 async def choose_city(query: CallbackQuery):
