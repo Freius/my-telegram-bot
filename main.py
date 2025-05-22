@@ -3,8 +3,8 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from config import API_TOKEN
 from parsers.hh_parser import get_hh_vacancies
 from analytics import analyze_vacancy
@@ -43,14 +43,6 @@ CITIES = {
     "Мурманск": 64
 }
 
-# Популярные должности
-POSITIONS = {
-    "Руководитель": "Руководитель",
-    "Заместитель руководителя": "Заместитель руководителя",
-    "Менеджер": "Менеджер",
-    "Другая": "Другая должность"
-}
-
 DEFAULT_CITY = "Великий Новгород"
 DEFAULT_CITY_ID = CITIES[DEFAULT_CITY]
 
@@ -63,18 +55,13 @@ SBER_BENCHMARK = {
 # Хранение выбора пользователей
 user_data = {}
 
-def generate_report(vacancies: list, bank_name: str, city: str, position: str = None) -> str:
-    """Генерирует отчет по вакансиям с указанием города и должности"""
+def generate_report(vacancies: list, bank_name: str, city: str) -> str:
+    """Генерирует отчет по вакансиям с указанием города"""
     if not vacancies:
-        position_text = f" по должности '{position}'" if position else ""
-        return (f"😕 В {city} не найдено вакансий для {bank_name}{position_text}\n"
-                "Попробуйте изменить параметры поиска или выбрать другую должность/город")
+        return (f"😕 В {city} не найдено вакансий для {bank_name}\n"
+                "Попробуйте изменить параметры поиска или выбрать другой город")
     
-    report = [f"📊 Отчет по вакансиям {bank_name} ({city})"]
-    if position:
-        report.append(f"по должности '{position}':\n")
-    else:
-        report.append(":\n")
+    report = [f"📊 Отчет по вакансиям {bank_name} ({city}):\n"]
     
     for i, vacancy in enumerate(vacancies[:5], 1):  # Показываем до 5 вакансий
         try:
@@ -127,8 +114,7 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
         "🌾 Россельхозбанк",
         "⛽ Газпромбанк",
         "💳 Тинькофф",
-        "🌆 Сменить город",
-        "💼 Выбрать должность"
+        "🌆 Сменить город"
     ]
     
     for text in buttons:
@@ -147,24 +133,11 @@ def get_city_keyboard() -> ReplyKeyboardMarkup:
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
-def get_position_keyboard() -> InlineKeyboardMarkup:
-    """Инлайн-клавиатура для выбора должности"""
-    builder = InlineKeyboardBuilder()
-    
-    for position in POSITIONS.values():
-        builder.add(InlineKeyboardButton(
-            text=position,
-            callback_data=f"position_{position}")
-        )
-    
-    builder.adjust(2)
-    return builder.as_markup()
-
 @dp.message(Command("start"))
 async def start(message: types.Message):
     """Обработчик команды /start"""
     user_id = message.from_user.id
-    user_data[user_id] = {"city": DEFAULT_CITY, "position": None}
+    user_data[user_id] = {"city": DEFAULT_CITY}
     
     await message.answer(
         f"🌆 Текущий город: {DEFAULT_CITY}\n"
@@ -180,66 +153,18 @@ async def change_city(message: types.Message):
         reply_markup=get_city_keyboard()
     )
 
-@dp.message(F.text == "💼 Выбрать должность")
-async def select_position(message: types.Message):
-    """Обработчик выбора должности"""
-    await message.answer(
-        "Выберите должность:",
-        reply_markup=get_position_keyboard()
-    )
-
-@dp.callback_query(F.data.startswith("position_"))
-async def process_position(callback: types.CallbackQuery):
-    """Обработка выбора должности"""
-    user_id = callback.from_user.id
-    position = callback.data.split("_")[1]
-    
-    if position == "Другая должность":
-        await callback.message.answer("Введите название должности:")
-        await callback.answer()
-        return
-    
-    if user_id not in user_data:
-        user_data[user_id] = {}
-    
-    user_data[user_id]["position"] = position
-    await callback.message.answer(
-        f"💼 Выбрана должность: {position}\n"
-        "Теперь выберите банк для анализа:",
-        reply_markup=get_main_keyboard()
-    )
-    await callback.answer()
-
 @dp.message(F.text.in_(CITIES.keys()))
 async def set_city(message: types.Message):
     """Установка выбранного города"""
     user_id = message.from_user.id
     city = message.text
-    user_data[user_id] = user_data.get(user_id, {})
-    user_data[user_id]["city"] = city
+    user_data[user_id] = {"city": city}
     
     await message.answer(
         f"🌆 Город изменен на: {city}\n"
         "Теперь выберите банк для анализа:",
         reply_markup=get_main_keyboard()
     )
-
-@dp.message()
-async def handle_custom_position(message: types.Message):
-    """Обработка ввода пользователем своей должности"""
-    user_id = message.from_user.id
-    
-    # Проверяем, ожидаем ли мы ввод должности от пользователя
-    if user_id in user_data and "position" in user_data[user_id] and user_data[user_id]["position"] == "Другая должность":
-        position = message.text
-        user_data[user_id]["position"] = position
-        
-        await message.answer(
-            f"💼 Выбрана должность: {position}\n"
-            "Теперь выберите банк для анализа:",
-            reply_markup=get_main_keyboard()
-        )
-        return
 
 @dp.message(F.text.in_(["🏦 Альфа-Банк", "🏛 ВТБ", "🌾 Россельхозбанк", "⛽ Газпромбанк", "💳 Тинькофф"]))
 async def handle_bank_button(message: types.Message):
@@ -256,22 +181,16 @@ async def handle_bank_button(message: types.Message):
     city = user_data.get(user_id, {}).get("city", DEFAULT_CITY)
     city_id = CITIES.get(city, DEFAULT_CITY_ID)
     bank_name = bank_mapping[message.text]
-    position = user_data.get(user_id, {}).get("position")
     
     try:
-        logger.info(f"Запрос анализа для {bank_name} в городе {city} (ID: {city_id}), должность: {position}")
-        await message.answer(f"🔍 Ищу вакансии {bank_name} в {city}{f' по должности {position}' if position else ''}...")
+        logger.info(f"Запрос анализа для {bank_name} в городе {city} (ID: {city_id})")
+        await message.answer(f"🔍 Ищу вакансии {bank_name} в {city}...")
         
         # Удаляем вебхук перед запуском long-polling
         await bot.delete_webhook(drop_pending_updates=True)
         
-        # Формируем поисковый запрос с учетом должности
-        search_query = bank_name
-        if position and position != "Другая должность":
-            search_query = f"{bank_name} {position}"
-        
-        # Первый запрос - точное совпадение
-        vacancies = get_hh_vacancies(search_query, city_id)
+        # Первый запрос - точное совпадение с названием банка
+        vacancies = get_hh_vacancies(bank_name, city_id)
         
         # Если не найдено, пробуем более общий запрос
         if not vacancies:
@@ -281,7 +200,7 @@ async def handle_bank_button(message: types.Message):
         if not vacancies and bank_name != "Тинькофф":
             vacancies = get_hh_vacancies(f"{bank_name.split()[0]} банк", city_id)
         
-        report = generate_report(vacancies, bank_name, city, position)
+        report = generate_report(vacancies, bank_name, city)
         await message.answer(
             report,
             reply_markup=get_main_keyboard(),
