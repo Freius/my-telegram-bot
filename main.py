@@ -154,7 +154,7 @@ def generate_report(vacancies: list, bank_name: str, city: str) -> str:
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_data[message.from_user.id] = {}
-    await message.answer("Выберите город:", reply_markup=city_keyboard())
+    await message.answer("для анализа вакансий выберите город:", reply_markup=city_keyboard())
 
 @dp.callback_query(F.data == "start")
 async def restart(query: CallbackQuery):
