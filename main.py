@@ -14,9 +14,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Инициализация бота
-API_TOKEN = "YOUR_BOT_API_TOKEN"  # Заменить на свой токен
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
+
 
 # Настройки банков
 BANK_MAPPING = {
