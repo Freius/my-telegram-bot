@@ -1,6 +1,7 @@
 import json
 import asyncio
 import logging
+import random
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -81,33 +82,75 @@ def format_salary(salary: dict) -> str:
     currency = salary.get('currency', '').upper()
     return f"{from_s} {to_s} {currency}".strip()
 
+def generate_ceo_response(vacancy: dict) -> str:
+    """Генерирует ответ от лица руководителя Сбербанка"""
+    salary = vacancy.get('salary', {})
+    salary_from = salary.get('from', 0)
+    salary_diff = salary_from - SBER_BENCHMARK['salary_avg']
+    
+    arguments = [
+        "В Сбере стабильная работа без рисков сокращения",
+        "У нас лучшая программа обучения и развития в банковском секторе",
+        "Корпоративная культура Сбера - это возможность работать в сильной команде",
+        "Мы предлагаем карьерный рост внутри компании",
+        "Соцпакет Сбера включает ДМС, льготное кредитование и другие привилегии"
+    ]
+    
+    if salary_diff > 0:
+        arguments.extend([
+            f"Мы готовы обсудить повышение вашей зарплаты до конца квартала",
+            "У нас есть система бонусов, которая может компенсировать разницу"
+        ])
+    elif salary_diff < 0:
+        arguments.append("Наши условия уже лучше предложенных в этой вакансии")
+    
+    description = vacancy.get('description', '').lower()
+    if any(tech.lower() in description for tech in SBER_BENCHMARK['tech_stack']):
+        arguments.append("Вы работаете с передовыми технологиями - это ценный опыт")
+    
+    selected_args = random.sample(arguments, min(3, len(arguments)))
+    
+    response = [
+        "💼 Коллега, я понимаю ваши поиски, но позвольте привести аргументы:",
+        *[f"• {arg}" for arg in selected_args],
+        "",
+        "Давайте обсудим вашу ситуацию индивидуально!",
+        "Мы ценим вас как специалиста и готовы к диалогу."
+    ]
+    
+    return "\n".join(response)
+
 def generate_report(vacancies: list, bank_name: str, city: str) -> str:
     if not vacancies:
         return f"😕 В {city} не найдено вакансий для {bank_name}.\nПопробуйте изменить параметры."
     report = [f"📊 Вакансии {bank_name} ({city}):"]
-    for i, v in enumerate(vacancies[:10], 1):  # Увеличено до 10
+    for i, v in enumerate(vacancies[:5], 1):  # Показываем 5 вакансий
         try:
             analyzed = analyze_vacancy(v, SBER_BENCHMARK)
             salary = format_salary(v.get('salary'))
             salary_cmp = ""
             if v.get('salary') and v['salary'].get('from'):
                 diff = v['salary']['from'] - SBER_BENCHMARK['salary_avg']
-                salary_cmp = "(🔺)" if diff > 0 else "(🔻)" if diff < 0 else "(≈ как в Сбере)"
+                salary_cmp = "(🔺 выше Сбера)" if diff > 0 else "(🔻 ниже Сбера)" if diff < 0 else "(≈ как в Сбере)"
+            
             report.append(
                 f"\n{i}. 🏦 {analyzed.get('Название банка', v.get('employer', {}).get('name', 'Не указано'))}\n"
                 f"   📌 Должность: {v.get('name', 'Не указана')}\n"
                 f"   💰 Зарплата: {salary} {salary_cmp}\n"
-                f"   ✔️ Преимущества: {analyzed.get('Преимущества', 'Нет')}\n"
                 f"   🎁 Соцпакет: {analyzed.get('Соцпакет', 'Нет данных')}\n"
-                f"   💻 Технологичность: {analyzed.get('Технологичность', 'Средняя')}\n"
-                f"   🔍 Сравнение с Сбером: {analyzed.get('Сравнение с Сбером', 'Нет данных')}\n"
                 f"   🔗 Ссылка: {v.get('alternate_url', 'нет')}"
             )
+            
+            # Добавляем ответ руководителя для вакансий с зарплатой выше или случайных
+            if diff > 0 or random.random() < 0.5:
+                report.append("\n   👔 Комментарий руководителя Сбера:")
+                report.append(f"   {generate_ceo_response(v)}")
+                
         except Exception as e:
             logger.error(f"Ошибка анализа вакансии: {e}")
     return "\n".join(report)
 
-# Handlers
+# Handlers (остаются без изменений)
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_data[message.from_user.id] = {}
@@ -165,7 +208,6 @@ async def choose_bank(query: CallbackQuery):
         logger.error(f"Ошибка при поиске: {e}")
         await query.message.answer("⚠️ Ошибка. Попробуйте позже.", reply_markup=back_to_main_keyboard())
 
-# Назад
 @dp.callback_query(F.data == "back:city")
 async def back_to_city(query: CallbackQuery):
     await query.message.edit_text("Выберите город:", reply_markup=city_keyboard())
@@ -174,7 +216,6 @@ async def back_to_city(query: CallbackQuery):
 async def back_to_position(query: CallbackQuery):
     await query.message.edit_text("Выберите должность:", reply_markup=position_keyboard())
 
-# Main
 async def main():
     logger.info("Бот запущен.")
     await bot.delete_webhook(drop_pending_updates=True)
