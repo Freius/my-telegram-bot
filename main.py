@@ -10,26 +10,20 @@ from parsers.hh_parser import get_hh_vacancies
 from analytics import analyze_vacancy
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Инициализация бота
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Настройки банков
 BANK_MAPPING = {
-    "alfa": "Альфа-Банк",
-    "vtb": "ВТБ",
-    "rshb": "Россельхозбанк",
-    "gazprom": "Газпромбанк", 
-    "tinkoff": "Тинькофф"
+    "🏦 Альфа-Банк": "Альфа-Банк",
+    "🏛 ВТБ": "ВТБ",
+    "🌾 Россельхозбанк": "Россельхозбанк",
+    "⛽ Газпромбанк": "Газпромбанк",
+    "💳 Тинькофф": "Тинькофф"
 }
 
-# Настройки городов (ID из API HeadHunter)
 CITIES = {
     "Великий Новгород": 67,
     "Калининград": 41,
@@ -46,36 +40,41 @@ CITIES = {
 DEFAULT_CITY = "Великий Новгород"
 DEFAULT_CITY_ID = CITIES[DEFAULT_CITY]
 
+POSITIONS = ["Менеджер", "Специалист", "Заместитель", "Руководитель", "Ввести вручную"]
+
 SBER_BENCHMARK = {
     "salary_avg": 120000,
     "benefits": ["медицинская страховка", "обучение", "ДМС"],
     "tech_stack": ["Python", "SQL", "Kafka"]
 }
 
-# Хранение выбора пользователей
 user_data = {}
 
+def format_salary(salary: dict) -> str:
+    if not salary:
+        return "Не указана"
+    from_s = f"от {salary['from']}" if salary.get('from') else ""
+    to_s = f"до {salary['to']}" if salary.get('to') else ""
+    currency = salary.get('currency', '').upper()
+    return f"{from_s} {to_s} {currency}".strip()
+
 def generate_report(vacancies: list, bank_name: str, city: str) -> str:
-    """Генерирует отчет по вакансиям с указанием города"""
     if not vacancies:
-        return (f"😕 В {city} не найдено вакансий для {bank_name}\n"
-                "Попробуйте изменить параметры поиска или выбрать другой город")
+        return f"😕 В {city} не найдено вакансий для {bank_name}.\nПопробуйте изменить параметры поиска."
     
     report = [f"📊 Отчет по вакансиям {bank_name} ({city}):\n"]
     
-    for i, vacancy in enumerate(vacancies[:5], 1):  # Показываем до 5 вакансий
+    for i, vacancy in enumerate(vacancies[:5], 1):
         try:
             analyzed = analyze_vacancy(vacancy, SBER_BENCHMARK)
             salary = format_salary(vacancy.get('salary'))
             salary_comparison = ""
-            
-            # Сравнение зарплаты
             if vacancy.get('salary') and vacancy['salary'].get('from'):
-                salary_diff = vacancy['salary']['from'] - SBER_BENCHMARK['salary_avg']
-                if salary_diff > 0:
-                    salary_comparison = f"(🔺 )"
-                elif salary_diff < 0:
-                    salary_comparison = f"(🔻 )"
+                diff = vacancy['salary']['from'] - SBER_BENCHMARK['salary_avg']
+                if diff > 0:
+                    salary_comparison = "(🔺)"
+                elif diff < 0:
+                    salary_comparison = "(🔻)"
                 else:
                     salary_comparison = "(≈ как в Сбере)"
             
@@ -92,132 +91,83 @@ def generate_report(vacancies: list, bank_name: str, city: str) -> str:
         except Exception as e:
             logger.error(f"Ошибка анализа вакансии: {e}")
             continue
-            
     return "\n".join(report)
 
-def format_salary(salary: dict) -> str:
-    """Форматирование информации о зарплате"""
-    if not salary:
-        return "Не указана"
-    from_s = f"от {salary['from']}" if salary.get('from') else ""
-    to_s = f"до {salary['to']}" if salary.get('to') else ""
-    currency = salary.get('currency', '').upper()
-    return f"{from_s} {to_s} {currency}".strip()
-
-def get_main_keyboard() -> ReplyKeyboardMarkup:
-    """Основная клавиатура с банками"""
+def get_city_keyboard() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
-    
-    buttons = [
-        "🏦 Альфа-Банк",
-        "🏛 ВТБ",
-        "🌾 Россельхозбанк",
-        "⛽ Газпромбанк",
-        "💳 Тинькофф",
-        "🌆 Сменить город"
-    ]
-    
-    for text in buttons:
-        builder.add(KeyboardButton(text=text))
-    
+    for city in CITIES.keys():
+        builder.add(KeyboardButton(text=city))
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
-def get_city_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура для выбора города"""
+def get_position_keyboard() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
-    
-    for city in CITIES.keys():
-        builder.add(KeyboardButton(text=city))
-    
+    for pos in POSITIONS:
+        builder.add(KeyboardButton(text=pos))
+    builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
+
+def get_bank_keyboard() -> ReplyKeyboardMarkup:
+    builder = ReplyKeyboardBuilder()
+    for name in BANK_MAPPING.keys():
+        builder.add(KeyboardButton(text=name))
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
 @dp.message(Command("start"))
-async def start(message: types.Message):
-    """Обработчик команды /start"""
+async def cmd_start(message: types.Message):
     user_id = message.from_user.id
-    user_data[user_id] = {"city": DEFAULT_CITY}
-    
-    await message.answer(
-        f"🌆 Текущий город: {DEFAULT_CITY}\n"
-        "🔍 Выберите банк для анализа вакансий:",
-        reply_markup=get_main_keyboard()
-    )
-
-@dp.message(F.text == "🌆 Сменить город")
-async def change_city(message: types.Message):
-    """Обработчик смены города"""
-    await message.answer(
-        "Выберите город:",
-        reply_markup=get_city_keyboard()
-    )
+    user_data[user_id] = {}
+    await message.answer("Выберите город:", reply_markup=get_city_keyboard())
 
 @dp.message(F.text.in_(CITIES.keys()))
-async def set_city(message: types.Message):
-    """Установка выбранного города"""
+async def city_chosen(message: types.Message):
     user_id = message.from_user.id
-    city = message.text
-    user_data[user_id] = {"city": city}
-    
-    await message.answer(
-        f"🌆 Город изменен на: {city}\n"
-        "Теперь выберите банк для анализа:",
-        reply_markup=get_main_keyboard()
-    )
+    user_data[user_id]["city"] = message.text
+    await message.answer(f"Выбран город: {message.text}\nТеперь выберите должность:", reply_markup=get_position_keyboard())
 
-@dp.message(F.text.in_(["🏦 Альфа-Банк", "🏛 ВТБ", "🌾 Россельхозбанк", "⛽ Газпромбанк", "💳 Тинькофф"]))
-async def handle_bank_button(message: types.Message):
-    """Обработка нажатий кнопок банков"""
-    bank_mapping = {
-        "🏦 Альфа-Банк": "Альфа-Банк",
-        "🏛 ВТБ": "ВТБ",
-        "🌾 Россельхозбанк": "Россельхозбанк",
-        "⛽ Газпромбанк": "Газпромбанк",
-        "💳 Тинькофф": "Тинькофф"
-    }
-    
+@dp.message(F.text.in_(POSITIONS))
+async def position_chosen(message: types.Message):
     user_id = message.from_user.id
-    city = user_data.get(user_id, {}).get("city", DEFAULT_CITY)
-    city_id = CITIES.get(city, DEFAULT_CITY_ID)
-    bank_name = bank_mapping[message.text]
-    
-    try:
-        logger.info(f"Запрос анализа для {bank_name} в городе {city} (ID: {city_id})")
-        await message.answer(f"🔍 Ищу вакансии {bank_name} в {city}...")
-        
-        # Удаляем вебхук перед запуском long-polling
+    if message.text == "Ввести вручную":
+        await message.answer("Введите должность вручную:")
+        user_data[user_id]["awaiting_custom_position"] = True
+    else:
+        user_data[user_id]["position"] = message.text
+        await message.answer("Теперь выберите банк:", reply_markup=get_bank_keyboard())
+
+@dp.message()
+async def handle_input(message: types.Message):
+    user_id = message.from_user.id
+
+    if user_data.get(user_id, {}).get("awaiting_custom_position"):
+        user_data[user_id]["position"] = message.text
+        user_data[user_id].pop("awaiting_custom_position")
+        await message.answer("Теперь выберите банк:", reply_markup=get_bank_keyboard())
+        return
+
+    if message.text in BANK_MAPPING:
+        city = user_data.get(user_id, {}).get("city", DEFAULT_CITY)
+        city_id = CITIES.get(city, DEFAULT_CITY_ID)
+        position = user_data.get(user_id, {}).get("position", "")
+        bank_name = BANK_MAPPING[message.text]
+
+        await message.answer(f"🔍 Ищу вакансии {bank_name} в {city} по позиции '{position}'...")
         await bot.delete_webhook(drop_pending_updates=True)
-        
-        # Первый запрос - точное совпадение с названием банка
-        vacancies = get_hh_vacancies(bank_name, city_id)
-        
-        # Если не найдено, пробуем более общий запрос
-        if not vacancies:
-            vacancies = get_hh_vacancies(bank_name.split()[0], city_id)
-        
-        # Если все равно не найдено, ищем вакансии банков вообще
-        if not vacancies and bank_name != "Тинькофф":
-            vacancies = get_hh_vacancies(f"{bank_name.split()[0]} банк", city_id)
-        
-        report = generate_report(vacancies, bank_name, city)
-        await message.answer(
-            report,
-            reply_markup=get_main_keyboard(),
-            disable_web_page_preview=True
-        )
-        
-    except Exception as e:
-        logger.error(f"Ошибка в обработке банка {bank_name}: {e}")
-        await message.answer(
-            "⚠️ Произошла ошибка при обработке запроса",
-            reply_markup=get_main_keyboard()
-        )
+
+        try:
+            vacancies = get_hh_vacancies(bank_name, city_id)
+            if position:
+                vacancies = [v for v in vacancies if position.lower() in v.get('name', '').lower()]
+
+            report = generate_report(vacancies, bank_name, city)
+            await message.answer(report, reply_markup=get_bank_keyboard(), disable_web_page_preview=True)
+        except Exception as e:
+            logger.error(f"Ошибка при получении вакансий: {e}")
+            await message.answer("⚠️ Произошла ошибка. Попробуйте позже.", reply_markup=get_city_keyboard())
 
 async def main():
-    """Запуск бота"""
     logger.info("Starting bot...")
-    # Убедимся, что вебхук удален перед запуском polling
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
