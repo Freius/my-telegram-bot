@@ -8,14 +8,12 @@ from config import API_TOKEN
 from parsers.hh_parser import get_hh_vacancies
 from analytics import analyze_vacancy
 
-# Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Данные
 CITIES = {
     "Великий Новгород": 67,
     "Калининград": 41,
@@ -29,7 +27,8 @@ CITIES = {
     "Мурманск": 64
 }
 
-POSITIONS = ["Менеджер", "Специалист", "Заместитель", "Руководитель"]
+POSITIONS = ["Все должности", "Менеджер", "Специалист", "Заместитель", "Руководитель"]
+
 BANK_MAPPING = {
     "alfa": "Альфа-Банк",
     "vtb": "ВТБ",
@@ -46,33 +45,34 @@ SBER_BENCHMARK = {
 
 user_data = {}
 
-# Клавиатуры
+# Keyboards
 def city_keyboard():
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=city, callback_data=f"city:{city}")] for city in CITIES
-        ] + [[InlineKeyboardButton(text="↩️ В начало", callback_data="start")]]
+        inline_keyboard=[[InlineKeyboardButton(text=city, callback_data=f"city:{city}")] for city in CITIES] +
+                        [[InlineKeyboardButton(text="↩️ В начало", callback_data="start")]]
     )
 
 def position_keyboard():
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=pos, callback_data=f"pos:{pos}")] for pos in POSITIONS
-        ] + [
-            [InlineKeyboardButton(text="✍️ Ввести вручную", callback_data="pos:manual")],
-            [InlineKeyboardButton(text="↩️ В начало", callback_data="start")]
-        ]
+        inline_keyboard=[[InlineKeyboardButton(text=pos, callback_data=f"pos:{pos}")] for pos in POSITIONS] +
+                        [[InlineKeyboardButton(text="✍️ Ввести вручную", callback_data="pos:manual")],
+                         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back:city"),
+                          InlineKeyboardButton(text="↩️ В начало", callback_data="start")]]
     )
 
 def bank_keyboard():
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=name, callback_data=f"bank:{key}")]
-            for key, name in BANK_MAPPING.items()
-        ] + [[InlineKeyboardButton(text="↩️ В начало", callback_data="start")]]
+        inline_keyboard=[[InlineKeyboardButton(text=name, callback_data=f"bank:{key}")] for key, name in BANK_MAPPING.items()] +
+                        [[InlineKeyboardButton(text="⬅️ Назад", callback_data="back:position"),
+                          InlineKeyboardButton(text="↩️ В начало", callback_data="start")]]
     )
 
-# Утилиты
+def back_to_main_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="↩️ В начало", callback_data="start")]]
+    )
+
+# Helpers
 def format_salary(salary: dict) -> str:
     if not salary:
         return "Не указана"
@@ -85,7 +85,7 @@ def generate_report(vacancies: list, bank_name: str, city: str) -> str:
     if not vacancies:
         return f"😕 В {city} не найдено вакансий для {bank_name}.\nПопробуйте изменить параметры."
     report = [f"📊 Вакансии {bank_name} ({city}):"]
-    for i, v in enumerate(vacancies[:5], 1):
+    for i, v in enumerate(vacancies[:10], 1):  # Увеличено до 10
         try:
             analyzed = analyze_vacancy(v, SBER_BENCHMARK)
             salary = format_salary(v.get('salary'))
@@ -104,10 +104,10 @@ def generate_report(vacancies: list, bank_name: str, city: str) -> str:
                 f"   🔗 Ссылка: {v.get('alternate_url', 'нет')}"
             )
         except Exception as e:
-            logger.error(f"Ошибка анализа: {e}")
+            logger.error(f"Ошибка анализа вакансии: {e}")
     return "\n".join(report)
 
-# Хендлеры
+# Handlers
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_data[message.from_user.id] = {}
@@ -133,7 +133,7 @@ async def choose_position(query: CallbackQuery):
         user_data[user_id]["awaiting_manual"] = True
         await query.message.edit_text("Введите должность вручную:")
     else:
-        user_data[user_id]["position"] = pos
+        user_data[user_id]["position"] = None if pos == "Все должности" else pos
         await query.message.edit_text("Теперь выберите банк:", reply_markup=bank_keyboard())
 
 @dp.message()
@@ -153,7 +153,7 @@ async def choose_bank(query: CallbackQuery):
     position = user_data[user_id].get("position")
     city_id = CITIES.get(city)
 
-    await query.message.edit_text(f"🔍 Ищу вакансии {bank_name} в {city} по '{position}'...")
+    await query.message.edit_text(f"🔍 Ищу вакансии {bank_name} в {city}{f' по должности \"{position}\"' if position else ''}...")
 
     try:
         vacancies = get_hh_vacancies(bank_name, city_id)
@@ -163,11 +163,18 @@ async def choose_bank(query: CallbackQuery):
         await query.message.answer(report, reply_markup=bank_keyboard(), disable_web_page_preview=True)
     except Exception as e:
         logger.error(f"Ошибка при поиске: {e}")
-        await query.message.answer("⚠️ Ошибка. Попробуйте позже.", reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="↩️ В начало", callback_data="start")]]
-        ))
+        await query.message.answer("⚠️ Ошибка. Попробуйте позже.", reply_markup=back_to_main_keyboard())
 
-# Запуск
+# Назад
+@dp.callback_query(F.data == "back:city")
+async def back_to_city(query: CallbackQuery):
+    await query.message.edit_text("Выберите город:", reply_markup=city_keyboard())
+
+@dp.callback_query(F.data == "back:position")
+async def back_to_position(query: CallbackQuery):
+    await query.message.edit_text("Выберите должность:", reply_markup=position_keyboard())
+
+# Main
 async def main():
     logger.info("Бот запущен.")
     await bot.delete_webhook(drop_pending_updates=True)
