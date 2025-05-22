@@ -51,6 +51,29 @@ POSITIONS = {
     "Любая": "Любая должность"
 }
 
+# Синонимы для поиска должностей
+POSITION_SYNONYMS = {
+    "Руководитель": [
+        "руководитель", "head", "chief", "leader",
+        "руководитель отдела", "руководитель направления",
+        "руководитель проекта", "руководитель группы",
+        "team lead", "управляющий", "директор"
+    ],
+    "Клиентский менеджер": [
+        "клиентский менеджер", "менеджер по работе с клиентами",
+        "account manager", "менеджер по клиентам",
+        "менеджер по обслуживанию", "client manager",
+        "relationship manager", "менеджер по продажам"
+    ],
+    "Менеджер": [
+        "менеджер", "manager", 
+        "менеджер по", "менеджер проекта",
+        "менеджер продукта", "менеджер по продажам",
+        "product manager", "project manager",
+        "менеджер по развитию", "менеджер направления"
+    ]
+}
+
 DEFAULT_CITY = "Великий Новгород"
 DEFAULT_CITY_ID = CITIES[DEFAULT_CITY]
 
@@ -220,7 +243,7 @@ async def set_city(message: types.Message):
 
 @dp.message(F.text.in_(["🏦 Альфа-Банк", "🏛 ВТБ", "🌾 Россельхозбанк", "⛽ Газпромбанк", "💳 Тинькофф"]))
 async def handle_bank_button(message: types.Message):
-    """Обработка нажатий кнопок банков"""
+    """Обработка нажатий кнопок банков с улучшенным поиском по должностям"""
     bank_mapping = {
         "🏦 Альфа-Банк": "Альфа-Банк",
         "🏛 ВТБ": "ВТБ",
@@ -236,15 +259,35 @@ async def handle_bank_button(message: types.Message):
     position = user_data.get(user_id, {}).get("position", "Любая должность")
     
     try:
-        logger.info(f"Запрос анализа для {bank_name} в городе {city} (ID: {city_id}), должность: {position}")
+        logger.info(f"Поиск вакансий: {bank_name} в {city}, должность: {position}")
         await message.answer(f"🔍 Ищу вакансии {bank_name} в {city}{f' по должности {position}' if position != 'Любая должность' else ''}...")
         
-        # Формируем поисковый запрос
-        search_query = bank_name
-        if position and position != "Любая должность":
-            search_query = f"{bank_name} {position}"
+        # Формируем расширенный поисковый запрос
+        if position == "Любая должность":
+            search_query = f'"{bank_name}"'
+        else:
+            synonyms = POSITION_SYNONYMS.get(position, [position.lower()])
+            synonyms_query = " OR ".join([f'"{s}"' for s in synonyms])
+            search_query = f'"{bank_name}" AND ({synonyms_query})'
         
+        # Получаем вакансии с учетом синонимов
         vacancies = get_hh_vacancies(search_query, city_id)
+        
+        # Дополнительная фильтрация по названию должности
+        if position != "Любая должность":
+            filtered_vacancies = []
+            synonyms_lower = [s.lower() for s in synonyms]
+            for vacancy in vacancies:
+                vacancy_name = vacancy.get('name', '').lower()
+                if any(syn in vacancy_name for syn in synonyms_lower):
+                    filtered_vacancies.append(vacancy)
+            vacancies = filtered_vacancies
+        
+        # Если результатов мало, пробуем более широкий поиск
+        if len(vacancies) < 3 and position != "Любая должность":
+            wider_search_query = f'"{bank_name}" AND ({position.lower()})'
+            additional_vacancies = get_hh_vacancies(wider_search_query, city_id)
+            vacancies.extend(vac for vac in additional_vacancies if vac not in vacancies)
         
         report = generate_report(vacancies, bank_name, city, position)
         await message.answer(
@@ -254,9 +297,9 @@ async def handle_bank_button(message: types.Message):
         )
         
     except Exception as e:
-        logger.error(f"Ошибка в обработке банка {bank_name}: {e}")
+        logger.error(f"Ошибка поиска вакансий: {str(e)}", exc_info=True)
         await message.answer(
-            "⚠️ Произошла ошибка при обработке запроса",
+            "⚠️ Произошла ошибка при поиске вакансий. Попробуйте изменить параметры.",
             reply_markup=get_main_keyboard()
         )
 
